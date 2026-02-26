@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -507,11 +507,9 @@ input[type=checkbox]{accent-color:var(--green);}
   </div>
   <div class="card" style="margin-top:18px;">
     <div class="card-header"><div class="card-title">🔁 Despesas Fixas Mensais</div><span class="badge badge-yellow">Automático</span></div>
-    <div class="stat-row"><span class="stat-label">Aluguel de ferramentas</span><span class="stat-val td-red">- R$ 200</span></div>
-    <div class="stat-row"><span class="stat-label">Plano celular</span><span class="stat-val td-red">- R$ 80</span></div>
-    <div class="stat-row"><span class="stat-label">Combustível fixo</span><span class="stat-val td-red">- R$ 300</span></div>
-    <div class="stat-row"><span class="stat-label"><strong>Total fixo/mês</strong></span><span class="stat-val td-red">- R$ 580</span></div>
-    <button class="btn btn-ghost" style="margin-top:11px;" onclick="alert('Adicionar despesa fixa')">+ Adicionar Despesa Fixa</button>
+    <div id="fixedExpensesList"></div>
+    <div class="stat-row"><span class="stat-label"><strong>Total fixo/mês</strong></span><span class="stat-val td-red" id="fixedExpensesTotal">- R$ 0,00</span></div>
+    <button class="btn btn-ghost" style="margin-top:11px;" onclick="openFixedExpenseModal()">+ Adicionar Despesa Fixa</button>
   </div>
 </div>
 
@@ -579,6 +577,21 @@ input[type=checkbox]{accent-color:var(--green);}
       <div class="form-actions">
         <button class="btn btn-ghost btn-full" onclick="closeSheetModal()">Cancelar</button>
         <button class="btn btn-primary btn-full" onclick="addSheetEntry()">Adicionar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DESPESA FIXA -->
+<div class="modal-overlay" id="fixedExpenseModal" onclick="closeFixedExpenseModalOut(event)">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">🔁 Nova Despesa Fixa</div><button class="modal-close" onclick="closeFixedExpenseModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Despesa</label><input class="form-input" type="text" id="fx-desc" placeholder="Ex: Aluguel, Internet, Energia..."></div>
+      <div class="form-group"><label class="form-label">R$</label><input class="form-input" type="number" id="fx-valor" placeholder="0,00" min="0" step="0.01"></div>
+      <div class="form-actions">
+        <button class="btn btn-ghost btn-full" onclick="closeFixedExpenseModal()">Cancelar</button>
+        <button class="btn btn-primary btn-full" onclick="addFixedExpense()">Adicionar</button>
       </div>
     </div>
   </div>
@@ -1716,6 +1729,38 @@ async function loadSheetEntries(showErrors = false){
   return { ok:true }
 }
 
+function isFixedCategory(cat){
+  const txt = String(cat || '').toLowerCase().trim()
+  return txt.includes('fix')
+}
+
+function renderFixedExpenses(){
+  const listEl = document.getElementById('fixedExpensesList')
+  const totalEl = document.getElementById('fixedExpensesTotal')
+  if (!listEl || !totalEl) return
+
+  const monthFilter = document.getElementById('filterMonth')?.value || today().slice(0,7)
+  const fixedList = sheetEntries
+    .filter(e => e.date.startsWith(monthFilter) && e.tipo === 'saida' && isFixedCategory(e.cat))
+    .sort((a,b) => a.date.localeCompare(b.date))
+
+  if (!fixedList.length) {
+    listEl.innerHTML = `<div class="stat-row"><span class="stat-label">Nenhuma despesa fixa cadastrada</span><span class="stat-val" style="color:var(--text3);">—</span></div>`
+    totalEl.textContent = '- ' + fmt(0)
+    return
+  }
+
+  listEl.innerHTML = fixedList.map(e => `
+    <div class="stat-row">
+      <span class="stat-label">${e.desc}</span>
+      <span class="stat-val td-red">- ${fmt(e.valor)}</span>
+    </div>
+  `).join('')
+
+  const total = fixedList.reduce((acc, e) => acc + (Number(e.valor) || 0), 0)
+  totalEl.textContent = '- ' + fmt(total)
+}
+
 function renderSheet(){
   let catFilter=document.getElementById('filterCat')?.value||'',monthFilter=document.getElementById('filterMonth')?.value||today().slice(0,7);
   let list=sheetEntries.filter(e=>e.date.startsWith(monthFilter)&&(!catFilter||e.cat===catFilter)).sort((a,b)=>a.date.localeCompare(b.date));
@@ -1731,20 +1776,19 @@ function renderSheet(){
   slEl.textContent=fmt(sl);slEl.style.color=sl>=0?'var(--green)':'var(--red)';
   let st=document.getElementById('saldoTotal');
   st.textContent=fmt(sl);st.style.color=sl>=0?'var(--green)':'var(--red)';
+  renderFixedExpenses()
 }
 
 function openSheetModal(){document.getElementById('sh-data').value=today();document.getElementById('sheetModal').classList.add('open');}
 function closeSheetModal(){document.getElementById('sheetModal').classList.remove('open');}
 function closeSheetModalOut(e){if(e.target===e.currentTarget) closeSheetModal();}
-async function addSheetEntry(){
-  let desc=document.getElementById('sh-desc').value,valor=parseFloat(document.getElementById('sh-valor').value)||0;
-  if(!desc||valor<=0){showToast('⚠️ Preencha descrição e valor');return;}
-  const tipo = normalizeSheetTipo(document.getElementById('sh-tipo').value)
-  const dataLanc = document.getElementById('sh-data').value || today()
-  const categoria = document.getElementById('sh-cat').value || 'Outros'
+function openFixedExpenseModal(){document.getElementById('fx-desc').value='';document.getElementById('fx-valor').value='';document.getElementById('fixedExpenseModal').classList.add('open');}
+function closeFixedExpenseModal(){document.getElementById('fixedExpenseModal').classList.remove('open');}
+function closeFixedExpenseModalOut(e){if(e.target===e.currentTarget) closeFixedExpenseModal();}
 
+async function insertLancamento({ desc, tipo, valor, categoria, dataLanc }){
   const { data: authData, error: authError } = await db.auth.getUser()
-  if (authError || !authData?.user) { showToast('❌ Faça login para salvar lançamentos'); return }
+  if (authError || !authData?.user) return { ok:false, error: authError || new Error('Usuário não autenticado') }
 
   const map = await getLancamentosColumnsMap()
   const missing = []
@@ -1753,10 +1797,7 @@ async function addSheetEntry(){
   if (!map.valor) missing.push('valor')
   if (!map.categoria) missing.push('categoria')
   if (!map.data) missing.push('data')
-  if (missing.length) {
-    showToast('❌ Tabela lancamentos incompleta: ' + missing.join(', '))
-    return
-  }
+  if (missing.length) return { ok:false, error: new Error('Tabela lancamentos incompleta: ' + missing.join(', ')) }
 
   const payload = {
     [map.userId]: authData.user.id,
@@ -1768,14 +1809,51 @@ async function addSheetEntry(){
   if (map.descricao) payload[map.descricao] = desc
 
   const { error } = await db.from('lancamentos').insert(payload)
-  if (error) {
-    showToast('❌ Erro ao salvar lançamento: ' + error.message)
+  if (error) return { ok:false, error }
+  return { ok:true }
+}
+
+async function addSheetEntry(){
+  let desc=document.getElementById('sh-desc').value,valor=parseFloat(document.getElementById('sh-valor').value)||0;
+  if(!desc||valor<=0){showToast('⚠️ Preencha descrição e valor');return;}
+  const tipo = normalizeSheetTipo(document.getElementById('sh-tipo').value)
+  const dataLanc = document.getElementById('sh-data').value || today()
+  const categoria = document.getElementById('sh-cat').value || 'Outros'
+
+  const saved = await insertLancamento({ desc, tipo, valor, categoria, dataLanc })
+  if (!saved.ok) {
+    showToast('❌ Erro ao salvar lançamento: ' + (saved.error?.message || 'falha desconhecida'))
     return
   }
 
   closeSheetModal()
   await loadSheetEntries()
   showToast('✅ Lançamento adicionado!')
+}
+
+async function addFixedExpense(){
+  const desc = document.getElementById('fx-desc')?.value?.trim()
+  const valor = parseFloat(document.getElementById('fx-valor')?.value) || 0
+  if (!desc || valor <= 0) {
+    showToast('⚠️ Preencha Despesa e R$')
+    return
+  }
+
+  const saved = await insertLancamento({
+    desc,
+    tipo: 'saida',
+    valor,
+    categoria: 'Fixo',
+    dataLanc: today()
+  })
+  if (!saved.ok) {
+    showToast('❌ Erro ao salvar despesa fixa: ' + (saved.error?.message || 'falha desconhecida'))
+    return
+  }
+
+  closeFixedExpenseModal()
+  await loadSheetEntries()
+  showToast('✅ Despesa fixa adicionada!')
 }
 async function deleteSheet(id){
   const map = await getLancamentosColumnsMap()
