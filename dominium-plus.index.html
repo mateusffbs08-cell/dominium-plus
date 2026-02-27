@@ -1419,11 +1419,60 @@ function renderHistorico(){
       <td class="td-blue">${fmt(s.value)}</td><td class="td-red">${fmt(cost(s))}</td><td class="td-green">${fmt(profit(s))}</td>
       <td><span class="badge ${margin(s)>=metas.alerta?'badge-green':'badge-red'}">${margin(s)}%</span></td>
       <td><span class="tag badge ${pmts[s.payment]||'badge-blue'}">${s.payment}</span></td>
-      <td><button class="btn btn-ghost" style="padding:3px 9px;font-size:11px;" onclick="deleteService(${s.id})">🗑</button></td>
+      <td><button type="button" class="btn btn-ghost delete-service-btn" style="padding:3px 9px;font-size:11px;" data-service-id="${s.id}" onclick="handleDeleteServiceClick(this)">🗑</button></td>
     </tr>`).join('');
 }
 function filterServices(){renderHistorico();}
-function deleteService(id){if(confirm('Remover?')){services=services.filter(s=>s.id!==id);renderHistorico();showToast('Serviço removido');}}
+function handleDeleteServiceClick(btn){
+  const serviceId = btn?.getAttribute('data-service-id')
+  if (!serviceId) {
+    showToast('❌ Não foi possível identificar o serviço.')
+    return
+  }
+  deleteService(serviceId)
+}
+async function deleteService(id){
+  try {
+    if(!id) return;
+    if(!confirm('Remover este serviço?')) {
+      showToast('Exclusão cancelada');
+      return;
+    }
+
+    const authRes = await db.auth.getUser();
+    const user = authRes?.data?.user;
+    const authError = authRes?.error;
+    if (authError || !user) {
+      showToast('❌ Sessão expirada. Entre novamente.');
+      return;
+    }
+
+    const { data, error } = await db
+      .from('servicos')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select('id');
+
+    if (error) {
+      showToast('❌ Erro ao remover: ' + error.message);
+      return;
+    }
+
+    if (!data || !data.length) {
+      showToast('⚠️ Serviço não encontrado para excluir.');
+      return;
+    }
+
+    services = services.filter(s => String(s.id) !== String(id));
+    renderDashboard();
+    renderHistorico();
+    showToast('✅ Serviço removido');
+  } catch (err) {
+    showToast('❌ Falha ao remover serviço.');
+    console.error('deleteService error:', err);
+  }
+}
 
 // ============ RELATÓRIOS ============
 function switchReport(period,el){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');reportPeriod=period;renderReport();}
