@@ -1182,6 +1182,123 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
         iconEl.textContent = guessInsightEmoji(item.textContent || '');
       }
     });
+
+    ensureInsightActionsAsButtons();
+  }
+
+  function normalizeActionText(value) {
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function ensureInsightActionButtonStyle() {
+    if (document.getElementById('insightActionButtonStyle')) return;
+    const style = document.createElement('style');
+    style.id = 'insightActionButtonStyle';
+    style.textContent = `
+      .insight-action.insight-action-btn{
+        background:none;
+        border:none;
+        padding:0;
+        margin-top:5px;
+        font-size:11px;
+        color:var(--green);
+        font-weight:700;
+        cursor:pointer;
+        text-align:left;
+        font-family:'DM Sans',sans-serif;
+      }
+      .insight-action.insight-action-btn:focus-visible{
+        outline:2px solid rgba(57,255,87,.45);
+        outline-offset:3px;
+        border-radius:4px;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function ensureInsightActionsAsButtons() {
+    ensureInsightActionButtonStyle();
+    document.querySelectorAll('.insight-action').forEach((el) => {
+      if (el.tagName && el.tagName.toLowerCase() === 'button') {
+        el.type = 'button';
+        el.classList.add('insight-action-btn');
+        return;
+      }
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `${el.className} insight-action-btn`.trim();
+      btn.innerHTML = el.innerHTML;
+      btn.setAttribute('aria-label', `Ação: ${String(el.textContent || '').trim()}`);
+      el.replaceWith(btn);
+    });
+  }
+
+  function getInsightActionRoute(actionText) {
+    const t = normalizeActionText(actionText);
+    if (t.includes('simular preco')) return '/insights-ia/simular-preco';
+    if (t.includes('priorizar este servico')) return '/novo-servico';
+    if (t.includes('manter estrategia')) return '/novo-servico';
+    return null;
+  }
+
+  function openInsightsSimularPreco() {
+    const simInput = document.getElementById('simTipo') || document.getElementById('simPct');
+    if (!simInput) return;
+    simInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (typeof simInput.focus === 'function') simInput.focus({ preventScroll: true });
+  }
+
+  function resolvePageNavElement(page) {
+    return document.querySelector(`.nav-item[data-page="${page}"]`) || null;
+  }
+
+  function applyInternalRoute(pathname) {
+    const path = String(pathname || '/').replace(/\/+$/, '') || '/';
+    if (path === '/insights-ia/simular-preco') {
+      if (typeof window.showPage === 'function') {
+        window.showPage('insights', resolvePageNavElement('insights'));
+        setTimeout(openInsightsSimularPreco, 80);
+      }
+      return true;
+    }
+    if (path === '/novo-servico') {
+      if (typeof window.showPage === 'function') {
+        window.showPage('novo-servico', resolvePageNavElement('novo-servico'));
+      }
+      return true;
+    }
+    return false;
+  }
+
+  function navigateWithoutReload(path) {
+    const current = String(window.location.pathname || '');
+    if (current !== path) {
+      history.pushState({ appPath: path }, '', path);
+    }
+    applyInternalRoute(path);
+  }
+
+  function bindInsightsActionsRouting() {
+    if (window.__insightsRoutingBound) return;
+    window.__insightsRoutingBound = true;
+
+    document.addEventListener('click', (event) => {
+      const actionBtn = event.target.closest('.insight-action');
+      if (!actionBtn) return;
+      const route = getInsightActionRoute(actionBtn.textContent || '');
+      if (!route) return;
+      event.preventDefault();
+      navigateWithoutReload(route);
+    });
+
+    window.addEventListener('popstate', () => {
+      applyInternalRoute(window.location.pathname || '/');
+    });
   }
 
   function wrap(name, afterFn) {
@@ -1360,6 +1477,8 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
 
     replaceQuestionIcons();
     renderReportChartFromUserData();
+    bindInsightsActionsRouting();
+    applyInternalRoute(window.location.pathname || '/');
 
     const observer = new MutationObserver(() => {
       replaceQuestionIcons();
@@ -1372,7 +1491,6 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
 </script>
 </body>
 </html>
-
 
 
 
