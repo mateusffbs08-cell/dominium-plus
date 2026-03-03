@@ -957,11 +957,26 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
     return [];
   }
 
-  function toDate(iso) {
-    if (!iso || typeof iso !== 'string' || !iso.includes('-')) return null;
-    const [y, m, d] = iso.split('-').map(Number);
-    if (!y || !m || !d) return null;
-    return new Date(y, m - 1, d);
+  function toDate(value) {
+    if (!value) return null;
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+    }
+
+    if (typeof value === 'string') {
+      const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (match) {
+        const y = Number(match[1]);
+        const m = Number(match[2]);
+        const d = Number(match[3]);
+        if (y && m && d) return new Date(y, m - 1, d);
+      }
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
   }
 
   function fmtKey(date) {
@@ -1028,6 +1043,70 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
       const revenue = Number(s?.value ?? s?.valor ?? 0) || 0;
       bucket.revenue += revenue;
       bucket.profit += revenue - serviceCost(s);
+    }
+
+    return {
+      labels: rows.map((r) => r.label),
+      revenue: rows.map((r) => Math.round(r.revenue * 100) / 100),
+      profit: rows.map((r) => Math.round(r.profit * 100) / 100)
+    };
+  }
+
+  function fmtWeekdayShort(date) {
+    const label = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      weekday: 'short'
+    }).format(date);
+    const clean = String(label || '').replace('.', '').trim();
+    return clean ? clean.charAt(0).toUpperCase() + clean.slice(1) : '';
+  }
+
+  function getServiceRevenue(service) {
+    return Number(
+      service?.valorRecebido ??
+      service?.value ??
+      service?.valor ??
+      0
+    ) || 0;
+  }
+
+  function getServiceExpenses(service) {
+    const explicit = Number(
+      service?.gastos ??
+      service?.gasto ??
+      service?.valorGastos ??
+      service?.totalGastos
+    );
+    if (Number.isFinite(explicit)) return explicit;
+    return serviceCost(service);
+  }
+
+  function buildWeeklySeries() {
+    const all = getGlobalServices();
+    const today = getTodayBR();
+    const start = new Date(today);
+    start.setDate(start.getDate() - 6);
+
+    const rows = [];
+    const totals = new Map();
+
+    for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+      const key = fmtKey(d);
+      const row = { key, label: fmtWeekdayShort(d), revenue: 0, profit: 0 };
+      rows.push(row);
+      totals.set(key, row);
+    }
+
+    for (const service of all) {
+      const date = toDate(service?.date ?? service?.data);
+      if (!date || date < start || date > today) continue;
+      const bucket = totals.get(fmtKey(date));
+      if (!bucket) continue;
+
+      const revenue = getServiceRevenue(service);
+      const expenses = getServiceExpenses(service);
+      bucket.revenue += revenue;
+      bucket.profit += (revenue - expenses);
     }
 
     return {
@@ -1119,6 +1198,75 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
     } catch (_) {
       window.reportChart = nextChart;
     }
+  }
+
+  function renderWeekChartFromUserData() {
+    const canvas = document.getElementById('weekChart');
+    if (!canvas || typeof Chart !== 'function') return;
+
+    const series = buildWeeklySeries();
+
+    try {
+      if (window._weekChart && typeof window._weekChart.destroy === 'function') {
+        window._weekChart.destroy();
+      }
+    } catch (_) {}
+
+    window._weekChart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: series.labels,
+        datasets: [
+          {
+            label: 'Receita',
+            data: series.revenue,
+            backgroundColor: 'rgba(57,255,87,.14)',
+            borderColor: '#39FF57',
+            borderWidth: 2,
+            borderRadius: 6
+          },
+          {
+            label: 'Lucro',
+            data: series.profit,
+            backgroundColor: 'rgba(0,201,177,.14)',
+            borderColor: '#00C9B1',
+            borderWidth: 2,
+            borderRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: {
+              color: '#7E97BA',
+              font: { size: 11, family: 'DM Sans' }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#4A6285', font: { size: 11 } },
+            grid: { color: 'rgba(30,48,85,.3)' }
+          },
+          y: {
+            ticks: {
+              color: '#4A6285',
+              callback: (v) => `R$${v}`,
+              font: { size: 11 }
+            },
+            grid: { color: 'rgba(30,48,85,.3)' }
+          }
+        }
+      }
+    });
+  }
+
+  function refreshDynamicCharts() {
+    renderReportChartFromUserData();
+    renderWeekChartFromUserData();
   }
 
   function guessInsightEmoji(text) {
@@ -1469,14 +1617,17 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
   function install() {
     wrap('renderReport', renderReportChartFromUserData);
     wrap('switchReport', renderReportChartFromUserData);
+    wrap('renderDashboard', renderWeekChartFromUserData);
     wrap('showPage', () => {
       replaceQuestionIcons();
-      renderReportChartFromUserData();
+      refreshDynamicCharts();
     });
-    wrap('loadServices', renderReportChartFromUserData);
+    wrap('loadServices', refreshDynamicCharts);
+    wrap('saveService', refreshDynamicCharts);
+    wrap('deleteService', refreshDynamicCharts);
 
     replaceQuestionIcons();
-    renderReportChartFromUserData();
+    refreshDynamicCharts();
     bindInsightsActionsRouting();
     applyInternalRoute(window.location.pathname || '/');
 
@@ -1491,6 +1642,8 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
 </script>
 </body>
 </html>
+
+
 
 
 
