@@ -1200,6 +1200,155 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
     window[name] = wrapped;
   }
 
+  window.atualizarUI = function atualizarUI(plano) {
+    const badge = document.querySelector('.plan-badge') || document.querySelector('.plano-info');
+    if (badge) {
+      if (plano === 'trial') badge.innerHTML = '🆓 Teste Grátis';
+      if (plano === 'pro') badge.innerHTML = '⭐ Plano Pro';
+      if (plano === 'premium') badge.innerHTML = '💎 Plano Premium';
+    }
+
+    if (plano === 'pro') {
+      document
+        .querySelectorAll('.btn-export, .export-btn, [onclick*="exportCSV"], [onclick*="exportPDF"]')
+        .forEach((el) => {
+          el.style.display = 'none';
+        });
+      const insightsMenu = document.querySelector(
+        '[onclick*="showPage(\'insights\')"], [onclick*="showPage(\\"insights\\")"]'
+      );
+      if (insightsMenu) insightsMenu.style.display = 'none';
+    }
+  };
+
+  window.mostrarPopupPlanos = function mostrarPopupPlanos(motivo) {
+    const existente = document.getElementById('popupPlanos');
+    if (existente) existente.remove();
+
+    const mensagem =
+      motivo === 'trial_expirado'
+        ? 'Seu período de teste de 7 dias encerrou.'
+        : motivo === 'plano_expirado'
+        ? 'Seu plano expirou.'
+        : 'Sua conta está cancelada.';
+
+    const popup = document.createElement('div');
+    popup.id = 'popupPlanos';
+    popup.innerHTML = `
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;z-index:99999;font-family:'DM Sans',sans-serif;">
+      <div style="background:#0F1E35;border:1px solid #1E3055;border-radius:20px;padding:48px;max-width:640px;width:90%;text-align:center;">
+        <div style="font-size:48px;margin-bottom:16px;">🔒</div>
+        <h2 style="color:#E8EDF5;font-size:24px;margin-bottom:8px;">Acesso Bloqueado</h2>
+        <p style="color:#7E97BA;margin-bottom:40px;">${mensagem}<br>Escolha um plano para continuar usando o Dominium+.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:32px;">
+          <div style="background:#162038;border:1px solid #1E3055;border-radius:16px;padding:28px;">
+            <div style="color:#7E97BA;font-size:13px;margin-bottom:8px;">PLANO PRO</div>
+            <div style="color:#39FF57;font-size:32px;font-weight:800;margin-bottom:4px;">R$ 19,99</div>
+            <div style="color:#7E97BA;font-size:12px;margin-bottom:20px;">/mês</div>
+            <ul style="text-align:left;color:#E8EDF5;font-size:13px;list-style:none;padding:0;margin-bottom:24px;">
+              <li style="padding:6px 0;border-bottom:1px solid #1E3055;">✅ Serviços ilimitados</li>
+              <li style="padding:6px 0;border-bottom:1px solid #1E3055;">✅ Histórico ilimitado</li>
+              <li style="padding:6px 0;border-bottom:1px solid #1E3055;">✅ Relatórios avançados</li>
+              <li style="padding:6px 0;border-bottom:1px solid #1E3055;">✅ Comparação de períodos</li>
+              <li style="padding:6px 0;border-bottom:1px solid #1E3055;">✅ Análise de serviços</li>
+              <li style="padding:6px 0;color:#4A6285;">❌ Exportações</li>
+              <li style="padding:6px 0;color:#4A6285;">❌ Insights IA</li>
+            </ul>
+            <button onclick="assinarPlano('pro')" style="width:100%;padding:12px;background:#39FF57;color:#0B1629;border:none;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;">Assinar Pro</button>
+          </div>
+          <div style="background:#162038;border:2px solid #39FF57;border-radius:16px;padding:28px;position:relative;">
+            <div style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#39FF57;color:#0B1629;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;">MAIS POPULAR</div>
+            <div style="color:#7E97BA;font-size:13px;margin-bottom:8px;">PLANO PREMIUM</div>
+            <div style="color:#39FF57;font-size:32px;font-weight:800;margin-bottom:4px;">R$ 29,99</div>
+            <div style="color:#7E97BA;font-size:12px;margin-bottom:20px;">/mês</div>
+            <ul style="text-align:left;color:#E8EDF5;font-size:13px;list-style:none;padding:0;margin-bottom:24px;">
+              <li style="padding:6px 0;border-bottom:1px solid #1E3055;">✅ Tudo do Pro</li>
+              <li style="padding:6px 0;border-bottom:1px solid #1E3055;">✅ Exportação ilimitada</li>
+              <li style="padding:6px 0;border-bottom:1px solid #1E3055;">✅ Exportar gráficos</li>
+              <li style="padding:6px 0;border-bottom:1px solid #1E3055;">✅ Insights com IA</li>
+              <li style="padding:6px 0;">✅ Suporte prioritário</li>
+            </ul>
+            <button onclick="assinarPlano('premium')" style="width:100%;padding:12px;background:#39FF57;color:#0B1629;border:none;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;">Assinar Premium</button>
+          </div>
+        </div>
+        <button onclick="db.auth.signOut().then(()=>{document.getElementById('app').style.display='none';document.getElementById('loginSection').style.display='flex'})" style="background:transparent;border:none;color:#4A6285;font-size:13px;cursor:pointer;">Sair da conta</button>
+      </div>
+    </div>
+  `;
+    document.body.appendChild(popup);
+  };
+
+  window.assinarPlano = async function assinarPlano(tipo) {
+    showToast('⏳ Gerando link de pagamento...');
+    const { data: { user } } = await db.auth.getUser();
+
+    const response = await fetch(
+      'https://uvmsrexmtzqexgusejaz.supabase.co/functions/v1/criar-pagamento',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.id, email: user.email, plano: tipo })
+      }
+    );
+
+    const { link, error } = await response.json();
+    if (error) {
+      showToast('❌ Erro ao gerar pagamento');
+      return;
+    }
+    window.location.href = link;
+  };
+
+  window.initApp = async function initApp() {
+    let d = new Date();
+    document.getElementById('pageDate').textContent = d.toLocaleDateString('pt-BR', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+
+    const { data: { user } } = await db.auth.getUser();
+    const { data: perfil } = await db.from('perfis')
+      .select('plano, trial_inicio, plano_ativo_ate')
+      .eq('id', user.id)
+      .single();
+
+    if (perfil) {
+      const agora = new Date();
+
+      if (perfil.plano === 'trial') {
+        const inicio = new Date(perfil.trial_inicio);
+        const diasPassados = Math.floor((agora - inicio) / (1000 * 60 * 60 * 24));
+        if (diasPassados >= 7) {
+          mostrarPopupPlanos('trial_expirado');
+          return;
+        }
+      }
+
+      if ((perfil.plano === 'pro' || perfil.plano === 'premium') && perfil.plano_ativo_ate) {
+        const expira = new Date(perfil.plano_ativo_ate);
+        if (agora > expira) {
+          await db.from('perfis').update({ plano: 'cancelado' }).eq('id', user.id);
+          mostrarPopupPlanos('plano_expirado');
+          return;
+        }
+      }
+
+      if (perfil.plano === 'cancelado') {
+        mostrarPopupPlanos('cancelado');
+        return;
+      }
+
+      window.planoAtual = perfil.plano;
+      atualizarUI(perfil.plano);
+    }
+
+    loadServices();
+    if (typeof window.loadLancamentos === 'function') {
+      loadLancamentos();
+    } else if (typeof window.loadSheetEntries === 'function') {
+      loadSheetEntries();
+    }
+  };
+
   function install() {
     wrap('renderReport', renderReportChartFromUserData);
     wrap('switchReport', renderReportChartFromUserData);
@@ -1223,7 +1372,6 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
 </script>
 </body>
 </html>
-
 
 
 
