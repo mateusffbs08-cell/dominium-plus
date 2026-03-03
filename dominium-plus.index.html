@@ -947,8 +947,284 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
   });
 })();
 </script>
+<script>
+(function () {
+  function getGlobalServices() {
+    try {
+      if (Array.isArray(window.services)) return window.services;
+      if (typeof services !== 'undefined' && Array.isArray(services)) return services;
+    } catch (_) {}
+    return [];
+  }
+
+  function toDate(iso) {
+    if (!iso || typeof iso !== 'string' || !iso.includes('-')) return null;
+    const [y, m, d] = iso.split('-').map(Number);
+    if (!y || !m || !d) return null;
+    return new Date(y, m - 1, d);
+  }
+
+  function fmtKey(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function fmtDayMonth(date) {
+    return String(date.getDate()).padStart(2, '0') + '/' + String(date.getMonth() + 1).padStart(2, '0');
+  }
+
+  function getTodayBR() {
+    const parts = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(new Date());
+    const get = (t) => Number(parts.find((p) => p.type === t)?.value || 0);
+    return new Date(get('year'), get('month') - 1, get('day'));
+  }
+
+  function serviceCost(s) {
+    if (typeof window.cost === 'function') return Number(window.cost(s)) || 0;
+    return (
+      Number(s?.matCost ?? s?.custo_material ?? 0) +
+      Number(s?.transport ?? s?.transporte ?? 0) +
+      Number(s?.commission ?? s?.comissao ?? 0) +
+      Number(s?.other ?? s?.outros_custos ?? 0)
+    ) || 0;
+  }
+
+  function buildSeries(mode) {
+    const all = getGlobalServices();
+    const today = getTodayBR();
+    const rows = [];
+    const totals = new Map();
+
+    let start;
+    if (mode === 'mensal') {
+      start = new Date(today.getFullYear(), today.getMonth(), 1);
+    } else if (mode === 'diario') {
+      start = new Date(today);
+      start.setDate(start.getDate() - 6);
+    } else {
+      start = new Date(today);
+      start.setDate(start.getDate() - 6);
+    }
+
+    for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+      const key = fmtKey(d);
+      rows.push({ key, label: fmtDayMonth(d), revenue: 0, profit: 0 });
+      totals.set(key, rows[rows.length - 1]);
+    }
+
+    for (const s of all) {
+      const d = toDate(s?.date ?? s?.data);
+      if (!d || d < start || d > today) continue;
+      const key = fmtKey(d);
+      const bucket = totals.get(key);
+      if (!bucket) continue;
+      const revenue = Number(s?.value ?? s?.valor ?? 0) || 0;
+      bucket.revenue += revenue;
+      bucket.profit += revenue - serviceCost(s);
+    }
+
+    return {
+      labels: rows.map((r) => r.label),
+      revenue: rows.map((r) => Math.round(r.revenue * 100) / 100),
+      profit: rows.map((r) => Math.round(r.profit * 100) / 100)
+    };
+  }
+
+  function readReportMode() {
+    if (typeof window.reportPeriod === 'string') return window.reportPeriod;
+    const active = document.querySelector('#page-relatorios .tab.active');
+    const label = (active?.textContent || '').toLowerCase();
+    if (label.includes('mens')) return 'mensal';
+    if (label.includes('di')) return 'diario';
+    return 'semanal';
+  }
+
+  function renderReportChartFromUserData() {
+    const canvas = document.getElementById('reportChart');
+    if (!canvas || typeof Chart !== 'function') return;
+
+    const mode = readReportMode();
+    const series = buildSeries(mode);
+
+    try {
+      if (typeof reportChart !== 'undefined' && reportChart && typeof reportChart.destroy === 'function') {
+        reportChart.destroy();
+      }
+    } catch (_) {}
+
+    const nextChart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: series.labels,
+        datasets: [
+          {
+            label: 'Receita',
+            data: series.revenue,
+            borderColor: '#39FF57',
+            backgroundColor: 'rgba(57,255,87,0.15)',
+            tension: 0.35,
+            fill: true,
+            pointBackgroundColor: '#39FF57',
+            pointRadius: 4
+          },
+          {
+            label: 'Lucro',
+            data: series.profit,
+            borderColor: '#00C9B1',
+            backgroundColor: 'rgba(0,201,177,0.14)',
+            tension: 0.35,
+            fill: true,
+            pointBackgroundColor: '#00C9B1',
+            pointRadius: 4
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: {
+              color: '#7E97BA',
+              font: { size: 11, family: 'DM Sans' }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#4A6285', font: { size: 11 } },
+            grid: { color: 'rgba(30,48,85,.3)' }
+          },
+          y: {
+            ticks: {
+              color: '#4A6285',
+              callback: (v) => 'R$' + v,
+              font: { size: 11 }
+            },
+            grid: { color: 'rgba(30,48,85,.3)' }
+          }
+        }
+      }
+    });
+
+    try {
+      reportChart = nextChart;
+    } catch (_) {
+      window.reportChart = nextChart;
+    }
+  }
+
+  function guessInsightEmoji(text) {
+    const t = String(text || '').toLowerCase();
+    if (t.includes('abaixo') || t.includes('alerta') || t.includes('transporte')) return '⚠️';
+    if (t.includes('lucrativo') || t.includes('margem')) return '📈';
+    if (t.includes('simular') || t.includes('preço') || t.includes('+10%')) return '💡';
+    return '💡';
+  }
+
+  function replaceQuestionIcons() {
+    const navMap = {
+      dashboard: '📊',
+      'novo-servico': '➕',
+      historico: '📋',
+      relatorios: '📈',
+      insights: '🧠',
+      planilha: '📁',
+      configuracoes: '⚙️'
+    };
+
+    document.querySelectorAll('.nav-item').forEach((item) => {
+      const page = item.getAttribute('data-page');
+      const icon = item.querySelector('.icon');
+      if (!icon) return;
+      if ((icon.textContent || '').replace(/\s/g, '').includes('?') && navMap[page]) {
+        icon.textContent = navMap[page];
+      }
+    });
+
+    document.querySelectorAll('button').forEach((btn) => {
+      const txt = (btn.textContent || '').trim();
+      if (/^\?+\s*Salvar Serviço/i.test(txt)) {
+        btn.textContent = '💾 Salvar Serviço';
+      } else if (/Entrar com Google/i.test(txt) && txt.includes('?')) {
+        btn.textContent = '🔑 Entrar com Google';
+      } else if (/^\?+\s*Upgrade Pro/i.test(txt)) {
+        btn.textContent = '⚡ Upgrade Pro';
+      } else if (txt.startsWith('?')) {
+        btn.textContent = txt.replace(/^\?+\s*/, '');
+      }
+    });
+
+    document.querySelectorAll('.card-title, .goal-title, .modal-title, .plan-name').forEach((el) => {
+      const txt = (el.textContent || '').trim();
+      if (!txt.startsWith('?')) return;
+      let clean = txt.replace(/^\?+\s*/, '');
+      if (/Meta Mensal/i.test(clean) && !clean.startsWith('🎯')) clean = `🎯 ${clean}`;
+      if (/Insights do Dia/i.test(clean) && !clean.startsWith('🧠')) clean = `🧠 ${clean}`;
+      if (/Central de Insights/i.test(clean) && !clean.startsWith('🧠')) clean = `🧠 ${clean}`;
+      if (/Histórico de Serviços/i.test(clean) && !clean.startsWith('📋')) clean = `📋 ${clean}`;
+      if (/Plano Grátis/i.test(clean) && !clean.startsWith('🆓')) clean = `🆓 ${clean}`;
+      el.textContent = clean;
+    });
+
+    document.querySelectorAll('.insight-item').forEach((item) => {
+      const iconEl = item.querySelector('.insight-icon');
+      if (!iconEl) return;
+      const iconTxt = (iconEl.textContent || '').trim();
+      if (!iconTxt || /^\?+$/.test(iconTxt)) {
+        iconEl.textContent = guessInsightEmoji(item.textContent || '');
+      }
+    });
+  }
+
+  function wrap(name, afterFn) {
+    const original = window[name];
+    if (typeof original !== 'function' || original.__realDataWrapped) return;
+    const wrapped = function (...args) {
+      const result = original.apply(this, args);
+      const done = () => setTimeout(afterFn, 0);
+      if (result && typeof result.then === 'function') {
+        return result.finally(done);
+      }
+      done();
+      return result;
+    };
+    wrapped.__realDataWrapped = true;
+    window[name] = wrapped;
+  }
+
+  function install() {
+    wrap('renderReport', renderReportChartFromUserData);
+    wrap('switchReport', renderReportChartFromUserData);
+    wrap('showPage', () => {
+      replaceQuestionIcons();
+      renderReportChartFromUserData();
+    });
+    wrap('loadServices', renderReportChartFromUserData);
+
+    replaceQuestionIcons();
+    renderReportChartFromUserData();
+
+    const observer = new MutationObserver(() => {
+      replaceQuestionIcons();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  window.addEventListener('DOMContentLoaded', install);
+})();
+</script>
 </body>
 </html>
+
+
 
 
 
