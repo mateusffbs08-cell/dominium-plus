@@ -1545,23 +1545,38 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
 
   window.assinarPlano = async function assinarPlano(tipo) {
     showToast('⏳ Gerando link de pagamento...');
-    const { data: { user } } = await db.auth.getUser();
-
-    const response = await fetch(
-      'https://uvmsrexmtzqexgusejaz.supabase.co/functions/v1/criar-pagamento',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.id, email: user.email, plano: tipo })
+    
+    try {
+      const { data: { user } } = await db.auth.getUser();
+      
+      if (!user) {
+        showToast('❌ Usuário não encontrado. Faça login novamente.');
+        return;
       }
-    );
 
-    const { link, error } = await response.json();
-    if (error) {
-      showToast('❌ Erro ao gerar pagamento');
-      return;
+      const response = await fetch(
+        'https://uvmsrexmtzqexgusejaz.supabase.co/functions/v1/criar-pagamento',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: user.id, email: user.email, plano: tipo })
+        }
+      );
+
+      const resultado = await response.json();
+      
+      if (resultado.error || !resultado.link) {
+        showToast('❌ Erro ao gerar pagamento');
+        console.error('Erro MP:', resultado);
+        return;
+      }
+      
+      window.location.href = resultado.link;
+      
+    } catch (err) {
+      showToast('❌ Erro: ' + err.message);
+      console.error(err);
     }
-    window.location.href = link;
   };
 
   window.initApp = async function initApp() {
@@ -1642,11 +1657,5 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
 </script>
 </body>
 </html>
-
-
-
-
-
-
 
 
