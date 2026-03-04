@@ -1548,6 +1548,7 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
     
     try {
       const { data: { user } } = await db.auth.getUser();
+      const { data: { session } } = await db.auth.getSession();
       
       if (!user) {
         showToast('❌ Usuário não encontrado. Faça login novamente.');
@@ -1558,20 +1559,36 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
         'https://uvmsrexmtzqexgusejaz.supabase.co/functions/v1/criar-pagamento',
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+          },
           body: JSON.stringify({ user_id: user.id, email: user.email, plano: tipo })
         }
       );
 
-      const resultado = await response.json();
+      const raw = await response.text();
+      let resultado = {};
+      try {
+        resultado = raw ? JSON.parse(raw) : {};
+      } catch (_) {
+        resultado = { error: raw || `HTTP ${response.status}` };
+      }
       
-      if (resultado.error || !resultado.link) {
+      const linkPagamento =
+        resultado.link ||
+        resultado.url ||
+        resultado.payment_url ||
+        resultado.init_point ||
+        '';
+
+      if (!response.ok || resultado.error || !linkPagamento) {
         showToast('❌ Erro ao gerar pagamento');
-        console.error('Erro MP:', resultado);
+        console.error('Erro MP:', { status: response.status, resultado });
         return;
       }
       
-      window.location.href = resultado.link;
+      window.location.assign(linkPagamento);
       
     } catch (err) {
       showToast('❌ Erro: ' + err.message);
@@ -1657,5 +1674,3 @@ const _0x175689=_0x4a73;(function(_0x5e246f,_0x3e3c9e){const _0x5d9365=_0x4a73,_
 </script>
 </body>
 </html>
-
-
