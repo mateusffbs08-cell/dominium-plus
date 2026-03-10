@@ -1568,6 +1568,8 @@ window.addEventListener('DOMContentLoaded', syncBrazilianSheetCalendar);
   };
 
   const PAYMENT_RETURN_STORAGE_KEY = 'dominium.payment.return_to';
+  const PAYMENT_CREATE_URL =
+    'https://uvmsrexmtzqexgusejaz.supabase.co/functions/v1/criar-pagamento';
   const PAYMENT_CONFIRM_URL =
     'https://uvmsrexmtzqexgusejaz.supabase.co/functions/v1/webhook-pagamento';
 
@@ -1602,6 +1604,49 @@ window.addEventListener('DOMContentLoaded', syncBrazilianSheetCalendar);
     window.localStorage.removeItem(PAYMENT_RETURN_STORAGE_KEY);
   }
 
+  function extractPaymentLink(result) {
+    return (
+      result?.link ||
+      result?.url ||
+      result?.payment_url ||
+      result?.init_point ||
+      result?.sandbox_init_point ||
+      result?.data?.link ||
+      result?.data?.url ||
+      result?.data?.init_point ||
+      result?.data?.sandbox_init_point ||
+      ''
+    );
+  }
+
+  function extractPaymentError(result, statusCode) {
+    const causeText = Array.isArray(result?.details)
+      ? result.details.map((item) => item?.description || item?.message || String(item || '')).filter(Boolean).join(' | ')
+      : String(result?.details || '').trim();
+
+    return (
+      result?.error ||
+      result?.message ||
+      causeText ||
+      `Falha ao criar pagamento (${statusCode})`
+    );
+  }
+
+  function redirectToPayment(link) {
+    const url = String(link || '').trim();
+    if (!url) return false;
+
+    window.location.href = url;
+
+    window.setTimeout(() => {
+      if (window.location.href !== url) {
+        window.location.assign(url);
+      }
+    }, 150);
+
+    return true;
+  }
+
   window.assinarPlano = async function assinarPlano(tipo) {
     showToast('⏳ Gerando link de pagamento...');
 
@@ -1618,17 +1663,14 @@ window.addEventListener('DOMContentLoaded', syncBrazilianSheetCalendar);
       const returnTo = getCurrentAppReturnTo();
       rememberPaymentReturnPath(returnTo);
 
-      const response = await fetch(
-        'https://uvmsrexmtzqexgusejaz.supabase.co/functions/v1/criar-pagamento',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({ plano: tipo, return_to: returnTo }),
+      const response = await fetch(PAYMENT_CREATE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
         },
-      );
+        body: JSON.stringify({ plano: tipo, return_to: returnTo }),
+      });
 
       const raw = await response.text();
       let resultado = {};
@@ -1638,21 +1680,19 @@ window.addEventListener('DOMContentLoaded', syncBrazilianSheetCalendar);
         resultado = { error: raw || `HTTP ${response.status}` };
       }
 
-      const linkPagamento =
-        resultado.link ||
-        resultado.url ||
-        resultado.payment_url ||
-        resultado.init_point ||
-        '';
+      const linkPagamento = extractPaymentLink(resultado);
 
-      if (!response.ok || resultado.error || !linkPagamento) {
+      if (!response.ok || !linkPagamento) {
         clearPaymentReturnPath();
-        showToast('❌ Erro ao gerar pagamento');
+        showToast('❌ ' + extractPaymentError(resultado, response.status));
         console.error('Erro MP:', { status: response.status, resultado });
         return;
       }
 
-      window.location.assign(linkPagamento);
+      if (!redirectToPayment(linkPagamento)) {
+        clearPaymentReturnPath();
+        showToast('❌ Link de pagamento inválido');
+      }
     } catch (err) {
       clearPaymentReturnPath();
       showToast('❌ Erro: ' + getErrorMessage(err));
