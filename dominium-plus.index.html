@@ -1568,6 +1568,8 @@ window.addEventListener('DOMContentLoaded', syncBrazilianSheetCalendar);
   };
 
   const PAYMENT_RETURN_STORAGE_KEY = 'dominium.payment.return_to';
+  const PAYMENT_CONFIRM_URL =
+    'https://uvmsrexmtzqexgusejaz.supabase.co/functions/v1/webhook-pagamento';
 
   function getErrorMessage(error) {
     return error instanceof Error ? error.message : String(error || 'erro desconhecido');
@@ -1677,6 +1679,13 @@ window.addEventListener('DOMContentLoaded', syncBrazilianSheetCalendar);
     url.searchParams.delete('pagamento');
     url.searchParams.delete('checkout_id');
     url.searchParams.delete('return_to');
+    url.searchParams.delete('payment_id');
+    url.searchParams.delete('collection_id');
+    url.searchParams.delete('merchant_order_id');
+    url.searchParams.delete('preference_id');
+    url.searchParams.delete('site_id');
+    url.searchParams.delete('processing_mode');
+    url.searchParams.delete('merchant_account_id');
     const nextUrl = `${url.pathname}${url.search ? url.search : ''}${url.hash || ''}`;
     window.history.replaceState({}, '', nextUrl);
   }
@@ -1685,9 +1694,52 @@ window.addEventListener('DOMContentLoaded', syncBrazilianSheetCalendar);
     return new Promise((resolve) => window.setTimeout(resolve, ms));
   }
 
+  async function confirmApprovedPayment(checkoutId, paymentId) {
+    const normalizedCheckoutId = String(checkoutId || '').trim();
+    const normalizedPaymentId = String(paymentId || '').trim();
+
+    if (!normalizedCheckoutId) {
+      return { confirmed: false, skipped: true, reason: 'missing_checkout_id' };
+    }
+
+    const { data: { session } } = await db.auth.getSession();
+    if (!session?.access_token) {
+      return { confirmed: false, skipped: true, reason: 'missing_session' };
+    }
+
+    const response = await fetch(PAYMENT_CONFIRM_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        checkout_id: normalizedCheckoutId,
+        payment_id: normalizedPaymentId || undefined,
+      }),
+    });
+
+    const raw = await response.text();
+    let payload = {};
+
+    try {
+      payload = raw ? JSON.parse(raw) : {};
+    } catch (_) {
+      payload = { error: raw || `HTTP ${response.status}` };
+    }
+
+    if (!response.ok && response.status !== 202) {
+      throw new Error(payload.error || `Falha ao confirmar pagamento (${response.status})`);
+    }
+
+    return payload;
+  }
+
   window.handlePaymentReturn = async function handlePaymentReturn() {
     const params = new URLSearchParams(window.location.search);
     const pagamento = params.get('pagamento');
+    const checkoutId = params.get('checkout_id') || '';
+    const paymentId = params.get('payment_id') || params.get('collection_id') || '';
 
     if (!pagamento) {
       return false;
@@ -1728,6 +1780,12 @@ window.addEventListener('DOMContentLoaded', syncBrazilianSheetCalendar);
       showToast('Pagamento aprovado. Sua sessão expirou; faça login para concluir a liberação.');
       setAuthVisibility(false);
       return true;
+    }
+
+    try {
+      await confirmApprovedPayment(checkoutId, paymentId);
+    } catch (error) {
+      console.error('Falha ao confirmar pagamento no retorno:', error);
     }
 
     let perfil = null;
